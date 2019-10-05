@@ -40,12 +40,17 @@ Start:
     jr nz, .copyImage
 
     call ClearScreen
-    ld hl, $9800
-    ld de, $9001
-    ld a, d
-    ld [hl], a
-    ld a, e
-    ld [hl], a
+    ld hl, $9801
+    ld d, $01
+    call SetPixel
+    
+    ld hl, $9802
+    ld d, $02
+    call SetPixel
+    
+    ld hl, $9803
+    ld d, $03
+    call SetPixel
 
     ; Load colour pallet
     ld a, %11100100
@@ -67,6 +72,11 @@ Start:
 .lockup
     jr .lockup
 
+SetPixel:
+    ld a, d
+    ld [hl], a
+    ret
+
 ClearScreen:
     ld hl, $9800
     ld de, $9000
@@ -87,7 +97,7 @@ Section "Image", rom0
 
 ImageData:
 
-    ; First tile in tile memory
+    ; First
     db %00000000
     db %00000000
 
@@ -112,7 +122,57 @@ ImageData:
     db %00000000
     db %00000000
 
-    ; Second tile in tile memory
+    ; Second
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+    
+    db %11111111
+    db %00000000
+
+    db %11111111
+    db %00000000
+
+    ; Third
+    db %00000000
+    db %11111111
+
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+    
+    db %00000000
+    db %11111111
+
+    ; Fourth
     db %11111111
     db %11111111
     
