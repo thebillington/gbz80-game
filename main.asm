@@ -14,6 +14,8 @@ Section "GameCode", rom0
 
 Start:
 
+    call ClearRAM
+
     ld hl, $C000
     ld bc, $9800
     ld [hl], c
@@ -75,6 +77,19 @@ DarkPixel:
 SetPixel:
     ld a, d
     ld [hl], a
+    ret
+
+ClearRAM:
+    ld hl, $C000
+    ld bc, $DFFF - $C000
+.clearLoop
+    ld a, $00
+    ld [hl], a
+    inc hl
+    dec bc
+    ld a, c
+    or b
+    jr nz, .clearLoop
     ret
 
 CopyImageData:
