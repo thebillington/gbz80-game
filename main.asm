@@ -14,6 +14,12 @@ Section "GameCode", rom0
 
 Start:
 
+    ld hl, $C000
+    ld bc, $9800
+    ld [hl], c
+    inc hl
+    ld [hl], b
+
 ; Wait for blank screen
 .waitVBlank
     ld a, [rLY]
@@ -26,146 +32,12 @@ Start:
 
     ; Load images into VRAM
     ld hl, $9000
-    ld de, NatImage
-    ld bc, EndNatImage - NatImage
+    ld de, ImageData
+    ld bc, EndImageData - ImageData
     call CopyImageData
 
     call ClearScreen
-    ld hl, $9821
-    ld d, $01
-    call SetPixel
-    
-    ld hl, $9822
-    ld d, $02
-    call SetPixel
-    
-    ld hl, $9823
-    ld d, $03
-    call SetPixel
-    
-    ld hl, $9824
-    ld d, $04
-    call SetPixel
-
-    ld hl, $9841
-    ld d, $05
-    call SetPixel
-    
-    ld hl, $9842
-    ld d, $06
-    call SetPixel
-    
-    ld hl, $9843
-    ld d, $07
-    call SetPixel
-    
-    ld hl, $9844
-    ld d, $08
-    call SetPixel
-    
-    ld hl, $9845
-    ld d, $09
-    call SetPixel
-    
-    ld hl, $9861
-    ld d, $0A
-    call SetPixel
-    
-    ld hl, $9862
-    ld d, $0B
-    call SetPixel
-    
-    ld hl, $9863
-    ld d, $0C
-    call SetPixel
-    
-    ld hl, $9864
-    ld d, $0D
-    call SetPixel
-    
-    ld hl, $9865
-    ld d, $0E
-    call SetPixel
-    
-    ld hl, $9881
-    ld d, $0F
-    call SetPixel
-    
-    ld hl, $9882
-    ld d, $10
-    call SetPixel
-    
-    ld hl, $9883
-    ld d, $11
-    call SetPixel
-    
-    ld hl, $9884
-    ld d, $12
-    call SetPixel
-    
-    ld hl, $9885
-    ld d, $13
-    call SetPixel
-    
-    ld hl, $98A1
-    ld d, $14
-    call SetPixel
-    
-    ld hl, $98A2
-    ld d, $15
-    call SetPixel
-    
-    ld hl, $98A3
-    ld d, $16
-    call SetPixel
-    
-    ld hl, $98A4
-    ld d, $17
-    call SetPixel
-    
-    ld hl, $98A5
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98C1
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98C2
-    ld d, $19
-    call SetPixel
-    
-    ld hl, $98C3
-    ld d, $1A
-    call SetPixel
-    
-    ld hl, $98C4
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98C5
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98E1
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98E2
-    ld d, $1B
-    call SetPixel
-    
-    ld hl, $98E3
-    ld d, $1C
-    call SetPixel
-    
-    ld hl, $98E4
-    ld d, $00
-    call SetPixel
-    
-    ld hl, $98E5
-    ld d, $00
-    call SetPixel
+    call DarkPixel
 
     ; Load colour pallet
     ld a, %11100100
@@ -187,6 +59,19 @@ Start:
 .lockup
     jr .lockup
 
+DarkPixel:
+    ld hl, $C000
+    ld c, [hl]
+    inc hl
+    ld b, [hl]
+    ld a, c
+    ld l, a
+    ld a, b
+    ld h, a
+    ld d, $03
+    call SetPixel
+    ret
+
 SetPixel:
     ld a, d
     ld [hl], a
@@ -207,7 +92,7 @@ CopyImageData:
 ClearScreen:
     ld hl, $9800
     ld de, $9000
-    ld bc, $5A00
+    ld bc, $9FF0 - $9800
 .clearLoop
     ld a, d
     ld [hl], a
@@ -220,7 +105,7 @@ ClearScreen:
     jr nz, .clearLoop
     ret
 
-Section "Images", rom0
+Section "ImageData", rom0
 
 ImageData:
 
