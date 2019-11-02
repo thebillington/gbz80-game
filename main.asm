@@ -32,12 +32,12 @@ Start:
     xor a ; (ld a, 0)
     ld [rLCDC], a
 
+    call ClearScreen
+
     ; Load images into VRAM
     ld de, LogoImageTile
     ld bc, LogoImageTileEnd - LogoImageTile
     call CopyImageData
-
-    call ClearScreen
 
     ld de, LogoImageMap
     ld bc, LogoImageMapEnd - LogoImageMap
