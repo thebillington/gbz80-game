@@ -92,9 +92,8 @@ LoadMap:
     ld hl, $9800
 .mapLoadLoop
     ld a, [de]
+    ld [hli], a
     inc de
-    ld [hl], a
-    inc hl
     dec bc
     ld a, c
     or b
