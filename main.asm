@@ -33,7 +33,6 @@ Start:
     ld [rLCDC], a
 
     ; Load images into VRAM
-    ld hl, $9000
     ld de, LogoImageTile
     ld bc, LogoImageTileEnd - LogoImageTile
     call CopyImageData
@@ -78,7 +77,7 @@ ClearRAM:
     ret
 
 CopyImageData:
-; Copy the images into memory
+    ld hl, $9000
 .copyImage
     ld a, [de]
     ld [hli], a ; Load a into hl and increment hl
