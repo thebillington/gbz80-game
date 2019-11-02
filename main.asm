@@ -92,12 +92,8 @@ CopyImageData:
 LoadMap:
     ld hl, $9800
 .mapLoadLoop
-    push hl
-    ld h, d
-    ld l, e
-    ld a, [hl]
+    ld a, [de]
     inc de
-    pop hl
     ld [hl], a
     inc hl
     dec bc
