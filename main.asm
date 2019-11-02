@@ -14,13 +14,7 @@ Section "GameCode", rom0
 
 Start:
 
-    call ClearRAM
-
-    ld hl, $C000
-    ld bc, $9801
-    ld [hl], c
-    inc hl
-    ld [hl], b
+    call ClearRAM ; Clear all ram locations to 0x00
 
 ; Wait for blank screen
 .waitVBlank
@@ -32,16 +26,17 @@ Start:
     xor a ; (ld a, 0)
     ld [rLCDC], a
 
-    call ClearScreen
+    call ClearScreen ; Clear tile map to point at 9000
 
     ; Load images into VRAM
-    ld de, LogoImageTile
-    ld bc, LogoImageTileEnd - LogoImageTile
-    call CopyImageData
+    ld de, LogoImageTile ; Load the location of the first tile
+    ld bc, LogoImageTileEnd - LogoImageTile ; Load the number of tiles
+    call CopyImageData ; Copy the image data
 
-    ld de, LogoImageMap
-    ld bc, LogoImageMapEnd - LogoImageMap
-    call LoadMap
+    ; Load map to display tiles
+    ld de, LogoImageMap ; Load the location of the first map
+    ld bc, LogoImageMapEnd - LogoImageMap ; Load the number of maps
+    call LoadMap ; Copy the map data
 
     ; Load colour pallet
     ld a, %11100100
@@ -64,41 +59,40 @@ Start:
     jr .lockup
 
 ClearRAM:
-    ld hl, $C000
-    ld bc, $DFFF - $C000
+    ld hl, $C000 ; Load the top RAM location
+    ld bc, $DFFF - $C000 ; Calculate the difference between the top and bottom RAM location
+    ld a, $00 ; Load a blank value into a
 .clearLoop
-    ld a, $00
-    ld [hl], a
-    inc hl
-    dec bc
-    ld a, c
-    or b
-    jr nz, .clearLoop
-    ret
+    ld [hli], a ; Put blank value into the RAM location
+    dec bc ; Decrement bc (to check whether we have cleared every ram location)
+    ld a, c ; Load b into a (if b is 0, a will hold a value of 0)
+    or b ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
+    jr nz, .clearLoop ; If the value in a is not 0 jump back to clear ram loop to clear next location
+    ret ; Return execution to call
 
 CopyImageData:
-    ld hl, $9000
-.copyImage
-    ld a, [de]
-    ld [hli], a ; Load a into hl and increment hl
-    inc de
-    dec bc
-    ld a, b
-    or c
-    jr nz, .copyImage
-    ret
+    ld hl, $9000 ; Load the memory mapped location of the tile map
+.copyImageLoop
+    ld a, [de] ; Load the first tile into a
+    ld [hli], a ; Put the tile into the next free memory location
+    inc de ; Increment de to point at the next tile
+    dec bc ; Decrement bc (to check whether we have more tiles to load)
+    ld a, b ; Load b into a (if b is 0, a will hold a value of 0)
+    or c ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
+    jr nz, .copyImageLoop ; If the value in a is not 0 jump back to copy image to load next tile
+    ret ; Return execution to call
 
 LoadMap:
-    ld hl, $9800
+    ld hl, $9800 ; Load the memory mapped location of map data for tiles 
 .mapLoadLoop
-    ld a, [de]
-    ld [hli], a
-    inc de
-    dec bc
-    ld a, c
-    or b
-    jr nz, .mapLoadLoop
-    ret
+    ld a, [de] ; Load the first map into a
+    ld [hli], a ; Put the location of the tile needed to map to this screen location
+    inc de ; Increment de to point at the next map location
+    dec bc ; Decrement bc (to check whether we have finished loading the map)
+    ld a, b ; Load b into a (if b is 0, a will hold a value of 0)
+    or c ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
+    jr nz, .mapLoadLoop ; If the value in a is not 0 jump back to map load loop to load next map
+    ret ; Return execution to call
 
 ClearScreen:
     ld hl, $9800
