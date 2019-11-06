@@ -97,19 +97,22 @@ Start:
 .loop
     halt    ; Wait until interrupt is triggered (Only VBlank enabled)
     
-    ld a, [FCNT]            ; Load frame count to A
-    inc a                   ; Incriment frame count
-    cp 30                   ; check if frame count is 30
-    jp NZ, .SkipScrollX     ; If frame count isn't 60, skip scroll X
+    ld a, [FCNT]    ; Load frame count to A
+    inc a           ; Incriment frame count
+    cp 30           ; check if frame count is 30
+    jp Z, .ScrollX  ; If frame count is 30, scroll X
+    ld [FCNT], a    ; Load A to frame count
 
-    ld a, [rSCX]            ; Load Scroll X to A
-    xor $0002               ; Toggle it between 0x0 & 0x2
-    ld [rSCX], a            ; Load A into Scroll X
+    jp .loop        ; Restart the game loop
 
-.SkipScrollX
-    ld [FCNT], a            ; Load A to frame count
+.ScrollX
+    ld a, [rSCX]    ; Load Scroll X to A
+    xor $0002       ; Toggle it between 0x0 & 0x2
+    ld [rSCX], a    ; Load A into Scroll X
+    xor a           ; Load 0 into A (ld a, 0)
+    ld [FCNT], a    ; Reset frame count
 
-    jp .loop                ; Restart the game loop
+    jp .loop        ; Restart the game loop
 
 ; Lock thread - **DEPRICIATED**
 .lockup
