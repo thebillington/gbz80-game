@@ -91,7 +91,9 @@ Start:
     ld [rNR52], a
 
     ; Turn screen back on
-    ld a, %10000001
+    xor a
+    or LCDCF_ON
+    or LCDCF_BGON
     ld [rLCDC], a
 
 .loop
