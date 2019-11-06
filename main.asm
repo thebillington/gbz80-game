@@ -1,11 +1,45 @@
 INCLUDE "hardware.inc"
+INCLUDE "ramap.inc"
+
+; -------- INTERRUPT VECTORS --------
+; specific memory addresses are called when a hardware interrupt triggers
+
+
+; Vertical-blank triggers each time the screen finishes drawing. Video-RAM
+; (VRAM) is only available during VBLANK. So this is when updating OAM /
+; sprites is executed.
+SECTION "VBlank", ROM0[$0040]
+    reti
+
+; LCDC interrupts are LCD-specific interrupts (not including vblank) such as
+; interrupting when the gameboy draws a specific horizontal line on-screen
+SECTION "LCDC", ROM0[$0048]
+    reti
+
+; Timer interrupt is triggered when the timer, rTIMA, ($FF05) overflows.
+; rDIV, rTIMA, rTMA, rTAC all control the timer.
+SECTION "Timer", ROM0[$0050]
+    reti
+
+; Serial interrupt occurs after the gameboy transfers a byte through the
+; gameboy link cable.
+SECTION "Serial", ROM0[$0058]
+    reti
+
+; Joypad interrupt occurs after a button has been pressed. Usually we don't
+; enable this, and instead poll the joypad state each vblank
+SECTION "Joypad", ROM0[$0060]
+    reti
+
+; -------- END INTERRUPT VECTORS --------
 
 Section "Header", rom0[$100]
 
 EntryPoint:
-    di
-    jp Start
+    di  ; Disable interrupts
+    jp Start    ; Jump to code start
 
+; RGBASM will fix header code later
 rept $150 - $104
     db 0
 endr
@@ -14,15 +48,15 @@ Section "GameCode", rom0
 
 Start:
 
-    call ClearRAM
+    ld SP, $FFFF  ; Set stack pointer to the top of HRAM
 
-    ld hl, $C000
-    ld bc, $9801
-    ld [hl], c
-    inc hl
-    ld [hl], b
+    ld a, IEF_VBLANK    ; Load VBlank mask into A Register
+    ld [rIE], a ; Set VBlank interrupt flag
+    ei  ; Enable interrupts
 
-; Wait for blank screen
+    call ClearRAM   ; Fills RAM with 0's
+
+; Wait for blank screen for initial loads
 .waitVBlank
     ld a, [rLY]
     cp 144
@@ -32,25 +66,25 @@ Start:
     xor a ; (ld a, 0)
     ld [rLCDC], a
 
+    call ClearScreen
+
     ; Load images into VRAM
     ld hl, $9000
     ld de, LogoImageTile
     ld bc, LogoImageTileEnd - LogoImageTile
     call CopyImageData
 
-    call ClearScreen
-
     ld de, LogoImageMap
     ld bc, LogoImageMapEnd - LogoImageMap
     call LoadMap
 
     ; Load colour pallet
-    ld a, %11100100
+    ld a, %00100111
     ld [rBGP], a
 
     ; Set the scroll x and y positions
     xor a ; (ld a, 0)
-    ld [rSCX], a
+    ld [rSCY], a
     ld [rSCY], a
 
     ; Turn off sound
@@ -60,9 +94,26 @@ Start:
     ld a, %10000001
     ld [rLCDC], a
 
-; Lock thread
+.loop
+    halt    ; Wait until interrupt is triggered (Only VBlank enabled)
+    
+    ld a, [FCNT]            ; Load frame count to A
+    inc a                   ; Incriment frame count
+    cp 30                   ; check if frame count is 30
+    jp NZ, .SkipScrollX     ; If frame count isn't 60, skip scroll X
+
+    ld a, [rSCX]            ; Load Scroll X to A
+    xor $0002               ; Toggle it between 0x0 & 0x2
+    ld [rSCX], a            ; Load A into Scroll X
+
+.SkipScrollX
+    ld [FCNT], a            ; Load A to frame count
+
+    jp .loop                ; Restart the game loop
+
+; Lock thread - **DEPRICIATED**
 .lockup
-    jr .lockup
+    jp .lockup
 
 ClearRAM:
     ld hl, $C000
