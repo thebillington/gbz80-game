@@ -1,0 +1,26 @@
+    IF !DEF(MEMORY_MAP_INC)
+MEMORY_MAP_INC SET 1
+
+; Sprite VRAM map location
+_SPRITE_VRAM EQU $8000
+
+; Scroll X: Background Animation
+FCNT EQU $C100
+
+; Screen positions
+X_ORIGIN EQU $08
+Y_ORIGIN EQU $10
+SCREEN_W EQU $A0
+SCREEN_H EQU $90
+
+; Sprites
+SPRITE_Y EQU _RAM + $00
+SPRITE_X EQU _RAM + $01
+SPRITE_TILE_NO EQU _RAM + $02
+SPRITE_SETTINGS EQU _RAM + $03
+
+; Button read values
+READ_D_PAD EQU $10
+READ_BUTTONS EQU $20
+
+ENDC
