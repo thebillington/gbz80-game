@@ -4,8 +4,8 @@ MEMORY_MAP_INC SET 1
 ; Sprite VRAM map location
 _SPRITE_VRAM EQU $8000
 
-; Scroll X: Background Animation
-FCNT EQU $C100
+; Scroll X: Background Animation -- NOT IN USE
+; FCNT EQU $C100
 
 ; Screen positions
 X_ORIGIN EQU $08

@@ -2,7 +2,8 @@ INCLUDE "hardware.inc"
 INCLUDE "memory_map.inc"
 INCLUDE "dma.asm"
 
-INCLUDE "Paddle.asm"
+; INCLUDE "Paddle.asm"
+INCLUDE "Frog.asm"
 
 ; -------- INTERRUPT VECTORS --------
 ; specific memory addresses are called when a hardware interrupt triggers
@@ -76,8 +77,8 @@ Start:
 
     ; Load images into VRAM
     ld hl, _SPRITE_VRAM
-    ld de, PADDLE
-    ld bc, PADDLE_END - PADDLE
+    ld de, FROG
+    ld bc, FROGEND - FROG
     call CopyImageData
 
     ; Load colour pallet
@@ -110,26 +111,86 @@ Start:
     halt    ; Wait until interrupt is triggered (Only VBlank enabled)
     nop
 
-    ld a, [FCNT]    ; Load frame count to A
-    inc a           ; Incriment frame count
-    ld [FCNT], a    ; Load A to frame count
-    cp 30           ; check if frame count is 30
-    jr nz, .loop    ; If frame count is 30, scroll X
-    ld a, 0
-    ld [FCNT], a    ; Reset frame count
+    ; -------- Frame Rate Limiting --------
+    ; ld a, [FCNT]    ; Load frame count to A
+    ; inc a           ; Incriment frame count
+    ; ld [FCNT], a    ; Load A to frame count
+    ; cp 30           ; check if frame count is 30
+    ; jr nz, .loop    ; If frame count is 30, scroll X
+    ; ld a, 0
+    ; ld [FCNT], a    ; Reset frame count
 
-    ld a, READ_D_PAD
-    ld [$FF00], a
-    ld a, [$FF00]
-    ld a, [$FF00]
-    xor $FF
-    and $80
-    ;jr z .loop
+    ; -------- Joypad Code --------
+    ld a, $20       ; Mask to pull bit 4 low (read the D pad)
+    ld [_HW], a     ; Pull bit 4 low
+    ld a, [_HW]     ; Read the value of the inputs
+    ld a, [_HW]     ; Read again to avoid debounce
 
-    ld a, [SPRITE_Y]
-    inc a
-    ld hl, SPRITE_Y
-    ld [hl], a
+    cpl             ; (A = ~A)
+    and $0F         ; Remove top 4 bits
+
+    swap a          ; Move the lower 4 bits to the upper 4 bits
+    ld b, a         ; Save the buttons states to b
+
+    ld a, $10       ; Mask to pull bit 4 low (read the buttons pad)
+    ld [_HW], a     ; Pull bit 4 low
+    ld a, [_HW]     ; Read the value of the inputs
+    ld a, [_HW]     ; Read again to avoid debounce
+
+    cpl             ; (A = ~A)
+    and $0F         ; Remove top 4 bits
+
+    or b            ; Combine with the button states
+    cp a, $0        ; Check if value is zero
+
+    ; jr nz, .lockup  ; If input detected, halt
+
+    push af         ; Save the joypad state
+    and PADF_UP     ; If up then set NZ flag
+
+    jr z, .JOY_RIGHT     ; If z flag then skip JOY_UP
+
+    ; -------- JOY_UP --------
+    ld a, [_RAM]    ; Get current Y value
+    dec a           ; Move the sprite upwards
+    ld [_RAM], a    ; write the new Y value to the sprite sheet
+
+.JOY_RIGHT
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_RIGHT  ; If Right then set NZ flag
+
+    jr z, .JOY_DOWN
+
+    ; -------- JOY_RIGHT --------
+    ld a, [_RAM + $1]   ; Get current X value
+    inc a               ; Move the sprite East
+    ld [_RAM + $1], a   ; write the new X value to the sprite sheet
+
+.JOY_DOWN
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_DOWN   ; If Right then set NZ flag
+
+    jr z, .JOY_LEFT
+
+    ; -------- JOY_DOWN --------
+    ld a, [_RAM]   ; Get current Y value
+    inc a          ; Move the sprite downwards
+    ld [_RAM], a   ; write the new Y value to the sprite sheet
+
+.JOY_LEFT
+    pop af          ; Load the joypad state
+    and PADF_LEFT   ; If Right then set NZ flag
+
+    jr z, .loop
+
+    ; -------- JOY_LEFT --------
+    ld a, [_RAM + $1]   ; Get current X value
+    dec a               ; Move the sprite West
+    ld [_RAM + $1], a   ; write the new X value to the sprite sheet
+
+    ; -------- END Joypad Code --------
 
     jr .loop        ; Restart the game loop
 
