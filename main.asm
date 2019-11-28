@@ -3,8 +3,7 @@ INCLUDE "memory_map.inc"
 INCLUDE "dma.asm"
 INCLUDE "constants.asm"
 
-; INCLUDE "Paddle.asm"
-INCLUDE "Frog.asm"
+INCLUDE "Spritesheet.asm"
 
 ; -------- INTERRUPT VECTORS --------
 ; specific memory addresses are called when a hardware interrupt triggers
@@ -77,8 +76,8 @@ Start:
 
     ; -------- Load images into VRAM ------
     ld hl, _SPRITE_VRAM
-    ld de, FROG
-    ld bc, FROGEND - FROG
+    ld de, SPRITES
+    ld bc, SPRITESEND - SPRITES
     call CopyImageData
 
     ; ------- Load colour pallet ----------
@@ -114,11 +113,44 @@ Start:
     ld hl, JUMPING
     ld [hl], 1
 
-    ; ------- Initialize DMA settings -------
+    ; ------- Initialize DMA -------
     ld hl, SPRITE_X
-	ld	[hl], X_ORIGIN	; set X to left
+	ld	[hl], X_ORIGIN + 60 + 8
     ld hl, SPRITE_Y
 	ld	[hl], Y_ORIGIN + (SCREEN_H / 2) - $08	; set Y to mid screen
+    ld hl, SPRITE_SETTINGS
+    ld  [hl], OAMF_XFLIP
+
+    ; ------- Ground ----------------
+    ld hl, SPRITE_TWO_X
+    ld  [hl], X_ORIGIN + 60 + 4
+    ld hl, SPRITE_TWO_Y
+    ld  [hl], 128
+    ld hl, SPRITE_TWO_TILE_NO
+    ld  [hl], 1
+
+    ld hl, SPRITE_THREE_X
+    ld  [hl], X_ORIGIN + 60 + 12
+    ld hl, SPRITE_THREE_Y
+    ld  [hl], 128
+    ld hl, SPRITE_THREE_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_FOUR_X
+    ld  [hl], X_ORIGIN + 60 + 20
+    ld hl, SPRITE_FOUR_Y
+    ld  [hl], 128
+    ld hl, SPRITE_FOUR_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_FIVE_X
+    ld  [hl], X_ORIGIN + 60 + 28
+    ld hl, SPRITE_FIVE_Y
+    ld  [hl], 128
+    ld hl, SPRITE_FIVE_TILE_NO
+    ld  [hl], 1
+    ld hl, SPRITE_FIVE_SETTINGS
+    ld  [hl], OAMF_XFLIP
 
 .loop
 
@@ -131,18 +163,26 @@ Start:
     ld [FCNT], a    ; Load A to frame count
 
     ; -------- Ground checks ---------------
-    ld a, [SPRITE_Y]
-    cp 120
-    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
-    ld a, [SPRITE_Y]
-    cp 121
-    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
-    ld a, [SPRITE_Y]
-    cp 122
-    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
+.GROUND_CHECK
     ld a, [SPRITE_Y]
     cp 123
-    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
+    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
+    cp 122
+    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
+    ld a, [SPRITE_Y]
+    cp 121
+    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
+    ld a, [SPRITE_Y]
+    cp 120
+    jr z, .CAN_JUMP     ; If we hit the ground, set jump boolean to false
+
+    jr .FALLING         ; If we haven't hit the ground, don't reset jump
+
+.INCREASE_HEIGHT
+    ld a, [SPRITE_Y]
+    sub 1
+    ld [SPRITE_Y], a
+    jr .GROUND_CHECK
 
 .FALLING
     ; -------- FALLING ---------------
@@ -207,9 +247,7 @@ Start:
     jr z, .JOY_RIGHT     ; If z flag then skip JOY_UP
 
     ; -------- JOY_UP --------
-    ld a, [SPRITE_Y]    ; Get current Y value
-    dec a           ; Move the sprite upwards
-    ld [SPRITE_Y], a    ; write the new Y value to the sprite sheet
+    ; Do nothing
 
 .JOY_RIGHT
     pop af          ; Load the joypad state
@@ -234,9 +272,7 @@ Start:
     jr z, .JOY_LEFT
 
     ; -------- JOY_DOWN --------
-    ld a, [SPRITE_Y]   ; Get current Y value
-    inc a          ; Move the sprite downwards
-    ld [SPRITE_Y], a   ; write the new Y value to the sprite sheet
+    ; Do nothing
 
 .JOY_LEFT
     pop af          ; Load the joypad state
@@ -261,16 +297,15 @@ Start:
     jr z, .JOY_B
 
     ; -------- JOY_A -----------
-
     ld a, [JUMPING]     ; Load jumping boolean into a
     and 1
     jr nz, .JOY_B       ; If already jumping, ignore
 
     ld hl, Y_VELOCITY   
-    ld [hl], -10        ; Set the Y_VELOCITY to move up
+    ld [hl], -6        ; Set the Y_VELOCITY to move up
 
     ld a, [SPRITE_Y]    ; Load the sprite y location
-    add 4               ; Add 4 to avoid platform lock
+    sub 1               ; Add 4 to avoid platform lock
     ld [SPRITE_Y], a    ; Store back in the y location
 
     ld hl, JUMPING
@@ -283,11 +318,11 @@ Start:
     jp z, .loop
 
     ; -------- JOY_B -----------
-    ld a, [_RAM]    ; Get the current y value
-    add $a          ; Move down by 10
-    ld [_RAM], a    ; Write the new y value to the DMA
-
+    ; Do nothing
+    
     ; -------- END Joypad Code --------
+
+.JOYPAD_END
 
     jp .loop
 
