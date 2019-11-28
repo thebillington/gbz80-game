@@ -63,38 +63,38 @@ Start:
     ld [rIE], a ; Set VBlank interrupt flag
     ei  ; Enable interrupts
 
-; Wait for blank screen for initial loads
+    ; -------- Wait for vBlank ------------
 .waitVBlank
     ld a, [rLY]
     cp 144
     jr c, .waitVBlank
 
-    ; Load 0 into a and copy to the LCDC register
+    ; -------- Init LCDC register ---------
     xor a ; (ld a, 0)
     ld [rLCDC], a
 
     call ClearScreen
 
-    ; Load images into VRAM
+    ; -------- Load images into VRAM ------
     ld hl, _SPRITE_VRAM
     ld de, FROG
     ld bc, FROGEND - FROG
     call CopyImageData
 
-    ; Load colour pallet
+    ; ------- Load colour pallet ----------
     ld a, %11100100
     ld [rBGP], a    ; BG pallet
     ld [rOBP0], a   ; OBJ0 pallet
 
-    ; Set the scroll x and y positions
+    ; ------- Set scroll x and y ----------
     xor a ; (ld a, 0)
     ld [rSCX], a
     ld [rSCY], a
 
-    ; Turn off sound
+    ; -------- Turn off sound --------------
     ld [rNR52], a
 
-    ; Turn screen back on
+    ; -------- Turn screen back on ---------
     xor a
     or LCDCF_ON
     or LCDCF_BGON
@@ -110,6 +110,11 @@ Start:
     ld hl, Y_VELOCITY
     ld [hl], 1
 
+    ; Initialize player state ---------------
+    ld hl, JUMPING
+    ld [hl], 1
+
+    ; ------- Initialize DMA settings -------
     ld hl, SPRITE_X
 	ld	[hl], X_ORIGIN	; set X to left
     ld hl, SPRITE_Y
@@ -128,37 +133,47 @@ Start:
     ; -------- Ground checks ---------------
     ld a, [SPRITE_Y]
     cp 120
-    jr z, .GRAVITY
+    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
     ld a, [SPRITE_Y]
     cp 121
-    jr z, .GRAVITY
+    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
     ld a, [SPRITE_Y]
     cp 122
-    jr z, .GRAVITY
+    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
     ld a, [SPRITE_Y]
     cp 123
-    jr z, .GRAVITY
+    jr z, .CAN_JUMP     ; If we have hit the ground, set jump boolean to false
 
 .FALLING
-    ; -------- Falling ---------------
+    ; -------- FALLING ---------------
     ld a, [Y_VELOCITY]      ; Load the y velocity
     ld b, a                 ; Store in b
     ld a, [SPRITE_Y]        ; Load the sprites y location
     add b                   ; Increase the y location by the current y velocity
     ld [SPRITE_Y], a        ; Store back
 
+    jr .GRAV_CHECK             ; Skip resetting the jumping boolean
+
+.CAN_JUMP
+
+    ; -------- CAN_JUMP ---------------
+    ld hl, JUMPING
+    ld [hl], 0         ; Set jumping to false
+
     ; ------- GRAVITY ------------------
-.GRAVITY
+.GRAV_CHECK
     ld a, [FALL_SPEED]  ; Load the fall speed into register a
     ld b, a             ; Store in register b
-    ld a, [Y_VELOCITY]       ; Load register a with the current Y velocity
+    ld a, [Y_VELOCITY]  ; Load register a with the current Y velocity
     cp b                ; Compare this to the fall speed
-    jr z, .JOYPAD    ; If already at max speed, continue
+    jr z, .JOYPAD       ; If already at max speed, continue
 
     ; ------- INCREASE_Y_VEL -----------
-    ld a, [Y_VELOCITY]       ; Load register a with the current Y velocity
-    inc a           ; Increment Y vel
-    ld [Y_VELOCITY], a   ; Store the new Y velocity
+    ld a, [GRAVITY]
+    ld b, a                 ; Load gravity and store in b
+    ld a, [Y_VELOCITY]      ; Load register a with the current Y velocity
+    add b                   ; Increment Y vel
+    ld [Y_VELOCITY], a      ; Store the new Y velocity
 
     ; -------- Joypad Code --------
 .JOYPAD
@@ -236,7 +251,7 @@ Start:
     ld [_RAM + $1], a   ; write the new X value to the sprite sheet
 
     ld a, 0
-    ld [SPRITE_SETTINGS], a
+    ld [SPRITE_SETTINGS], a     ; Set the sprite to point left
 
 .JOY_A
     pop af          ; Load the joypad state
@@ -246,12 +261,20 @@ Start:
     jr z, .JOY_B
 
     ; -------- JOY_A -----------
+
+    ld a, [JUMPING]     ; Load jumping boolean into a
+    and 1
+    jr nz, .JOY_B       ; If already jumping, ignore
+
     ld hl, Y_VELOCITY   
     ld [hl], -10        ; Set the Y_VELOCITY to move up
 
     ld a, [SPRITE_Y]    ; Load the sprite y location
     add 4               ; Add 4 to avoid platform lock
     ld [SPRITE_Y], a    ; Store back in the y location
+
+    ld hl, JUMPING
+    ld [hl], 1     ; Set jumping variable to true
 
 .JOY_B
     pop af          ; Load the joypad state
@@ -265,6 +288,8 @@ Start:
     ld [_RAM], a    ; Write the new y value to the DMA
 
     ; -------- END Joypad Code --------
+
+    jp .loop
 
     ; -------- Frame Count Limiting ----
 .FRAME_COUNT_LIMIT

@@ -13,10 +13,13 @@ SPRITE_X EQU _RAM + $01
 SPRITE_TILE_NO EQU _RAM + $02
 SPRITE_SETTINGS EQU _RAM + $03
 
-; Gravity constants
-GRAVITY EQU _RAM + $100
-FALL_SPEED EQU _RAM + $101
-Y_VELOCITY EQU _RAM + $102
+; Gravity variables
+GRAVITY EQU _RAM + $200
+FALL_SPEED EQU _RAM + $201
+Y_VELOCITY EQU _RAM + $202
+
+; Player state variables
+JUMPING EQU _RAM + $203
 
 ; Button read values
 READ_D_PAD EQU $20
