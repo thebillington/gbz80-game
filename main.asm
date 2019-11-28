@@ -1,13 +1,13 @@
 INCLUDE "hardware.inc"
 INCLUDE "memory_map.inc"
 INCLUDE "dma.asm"
+INCLUDE "constants.asm"
 
 ; INCLUDE "Paddle.asm"
 INCLUDE "Frog.asm"
 
 ; -------- INTERRUPT VECTORS --------
 ; specific memory addresses are called when a hardware interrupt triggers
-
 
 ; Vertical-blank triggers each time the screen finishes drawing. Video-RAM
 ; (VRAM) is only available during VBLANK. So this is when updating OAM /
@@ -102,26 +102,53 @@ Start:
     or LCDCF_OBJON
     ld [rLCDC], a
 
+    ; -------- Initialize physics ----------
+    ld hl, GRAVITY
+    ld [hl], 1
+    ld hl, FALL_SPEED
+    ld [hl], 4
+    ld hl, Y_VELOCITY
+    ld [hl], 1
+
     ld hl, SPRITE_X
 	ld	[hl], X_ORIGIN	; set X to left
     ld hl, SPRITE_Y
 	ld	[hl], Y_ORIGIN + (SCREEN_H / 2) - $08	; set Y to mid screen
 
 .loop
+
     halt    ; Wait until interrupt is triggered (Only VBlank enabled)
     nop
 
-    ; -------- Frame Rate Limiting --------
-    ; ld a, [FCNT]    ; Load frame count to A
-    ; inc a           ; Incriment frame count
-    ; ld [FCNT], a    ; Load A to frame count
-    ; cp 30           ; check if frame count is 30
-    ; jr nz, .loop    ; If frame count is 30, scroll X
-    ; ld a, 0
-    ; ld [FCNT], a    ; Reset frame count
+    ; -------- Frame Rate Monitoring --------
+    ld a, [FCNT]    ; Load frame count to A
+    inc a           ; Incriment frame count
+    ld [FCNT], a    ; Load A to frame count
+
+.FALLING
+    ; -------- Falling ---------------
+    ld a, [Y_VELOCITY]      ; Load the y velocity
+    ld b, a                 ; Store in b
+    ld a, [SPRITE_Y]        ; Load the sprites y location
+    add b                   ; Increase the y location by the current y velocity
+    ld [SPRITE_Y], a        ; Store back
+
+    ; ------- GRAVITY ------------------
+.GRAVITY
+    ld a, [FALL_SPEED]  ; Load the fall speed into register a
+    ld b, a             ; Store in register b
+    ld a, [Y_VELOCITY]       ; Load register a with the current Y velocity
+    cp b                ; Compare this to the fall speed
+    jr z, .JOYPAD    ; If already at max speed, continue
+
+    ; ------- INCREASE_Y_VEL -----------
+    ld a, [Y_VELOCITY]       ; Load register a with the current Y velocity
+    inc a           ; Increment Y vel
+    ld [Y_VELOCITY], a   ; Store the new Y velocity
 
     ; -------- Joypad Code --------
-    ld a, $20       ; Mask to pull bit 4 low (read the D pad)
+.JOYPAD
+    ld a, READ_D_PAD       ; Mask to pull bit 4 low (read the D pad)
     ld [_HW], a     ; Pull bit 4 low
     ld a, [_HW]     ; Read the value of the inputs
     ld a, [_HW]     ; Read again to avoid debounce
@@ -132,7 +159,7 @@ Start:
     swap a          ; Move the lower 4 bits to the upper 4 bits
     ld b, a         ; Save the buttons states to b
 
-    ld a, $10       ; Mask to pull bit 4 low (read the buttons pad)
+    ld a, READ_BUTTONS       ; Mask to pull bit 4 low (read the buttons pad)
     ld [_HW], a     ; Pull bit 4 low
     ld a, [_HW]     ; Read the value of the inputs
     ld a, [_HW]     ; Read again to avoid debounce
@@ -151,9 +178,9 @@ Start:
     jr z, .JOY_RIGHT     ; If z flag then skip JOY_UP
 
     ; -------- JOY_UP --------
-    ld a, [_RAM]    ; Get current Y value
+    ld a, [SPRITE_Y]    ; Get current Y value
     dec a           ; Move the sprite upwards
-    ld [_RAM], a    ; write the new Y value to the sprite sheet
+    ld [SPRITE_Y], a    ; write the new Y value to the sprite sheet
 
 .JOY_RIGHT
     pop af          ; Load the joypad state
@@ -175,24 +202,61 @@ Start:
     jr z, .JOY_LEFT
 
     ; -------- JOY_DOWN --------
-    ld a, [_RAM]   ; Get current Y value
+    ld a, [SPRITE_Y]   ; Get current Y value
     inc a          ; Move the sprite downwards
-    ld [_RAM], a   ; write the new Y value to the sprite sheet
+    ld [SPRITE_Y], a   ; write the new Y value to the sprite sheet
 
 .JOY_LEFT
     pop af          ; Load the joypad state
+    push af         ; Save the joypad state
     and PADF_LEFT   ; If Right then set NZ flag
 
-    jr z, .loop
+    jr z, .JOY_A
 
     ; -------- JOY_LEFT --------
     ld a, [_RAM + $1]   ; Get current X value
     dec a               ; Move the sprite West
     ld [_RAM + $1], a   ; write the new X value to the sprite sheet
 
+.JOY_A
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_A      ; If A then set the NZ flag
+
+    jr z, .JOY_B
+
+    ; -------- JOY_A -----------
+    ld hl, Y_VELOCITY
+    ld [hl], -10
+
+.JOY_B
+    pop af          ; Load the joypad state
+    and PADF_B      ; If B then set the NZ flag
+
+    jp z, .loop
+
+    ; -------- JOY_B -----------
+    ld a, [_RAM]    ; Get the current y value
+    add $a          ; Move down by 10
+    ld [_RAM], a    ; Write the new y value to the DMA
+
     ; -------- END Joypad Code --------
 
-    jr .loop        ; Restart the game loop
+    ; -------- Frame Count Limiting ----
+.FRAME_COUNT_LIMIT
+
+    ld a, [FCNT]
+    cp 30           ; check if frame count is 30
+    jp nz, .loop     ; If frame count is 30, scroll X
+
+    ; ------- Runs once every 30 frames -------
+
+    ; ------- RESET_FRAME_COUNT -------------
+.RESET_FRAME_COUNT
+    ld a, 0
+    ld [FCNT], a
+
+    jp .loop        ; Restart the game loop
 
 .lockup         ; Should never be reached
     jr .lockup

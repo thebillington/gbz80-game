@@ -1,0 +1,5 @@
+; Screen positions
+X_ORIGIN EQU $08
+Y_ORIGIN EQU $10
+SCREEN_W EQU $A0
+SCREEN_H EQU $90
