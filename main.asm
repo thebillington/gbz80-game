@@ -125,6 +125,20 @@ Start:
     inc a           ; Incriment frame count
     ld [FCNT], a    ; Load A to frame count
 
+    ; -------- Ground checks ---------------
+    ld a, [SPRITE_Y]
+    cp 120
+    jr z, .GRAVITY
+    ld a, [SPRITE_Y]
+    cp 121
+    jr z, .GRAVITY
+    ld a, [SPRITE_Y]
+    cp 122
+    jr z, .GRAVITY
+    ld a, [SPRITE_Y]
+    cp 123
+    jr z, .GRAVITY
+
 .FALLING
     ; -------- Falling ---------------
     ld a, [Y_VELOCITY]      ; Load the y velocity
@@ -194,6 +208,9 @@ Start:
     inc a               ; Move the sprite East
     ld [_RAM + $1], a   ; write the new X value to the sprite sheet
 
+    ld a, OAMF_XFLIP    ; Load a with the sprite flipped x value
+    ld [SPRITE_SETTINGS], a
+
 .JOY_DOWN
     pop af          ; Load the joypad state
     push af         ; Save the joypad state
@@ -218,6 +235,9 @@ Start:
     dec a               ; Move the sprite West
     ld [_RAM + $1], a   ; write the new X value to the sprite sheet
 
+    ld a, 0
+    ld [SPRITE_SETTINGS], a
+
 .JOY_A
     pop af          ; Load the joypad state
     push af         ; Save the joypad state
@@ -226,8 +246,12 @@ Start:
     jr z, .JOY_B
 
     ; -------- JOY_A -----------
-    ld hl, Y_VELOCITY
-    ld [hl], -10
+    ld hl, Y_VELOCITY   
+    ld [hl], -10        ; Set the Y_VELOCITY to move up
+
+    ld a, [SPRITE_Y]    ; Load the sprite y location
+    add 4               ; Add 4 to avoid platform lock
+    ld [SPRITE_Y], a    ; Store back in the y location
 
 .JOY_B
     pop af          ; Load the joypad state
