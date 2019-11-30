@@ -105,9 +105,13 @@ Start:
     ld hl, GRAVITY
     ld [hl], 1
     ld hl, FALL_SPEED
-    ld [hl], 4
+    ld [hl], 3
     ld hl, Y_VELOCITY
     ld [hl], 1
+    ld hl, JUMP_SPEED
+    ld [hl], -5
+    ld hl, PHYSICS_FRAME_COUNT
+    ld [hl], 3
 
     ; Initialize player state ---------------
     ld hl, JUMPING
@@ -115,41 +119,64 @@ Start:
 
     ; ------- Initialize DMA -------
     ld hl, SPRITE_X
-	ld	[hl], X_ORIGIN + 60 + 8
+	ld	[hl], X_ORIGIN + 30 + 8
     ld hl, SPRITE_Y
 	ld	[hl], Y_ORIGIN + (SCREEN_H / 2) - $08	; set Y to mid screen
     ld hl, SPRITE_SETTINGS
     ld  [hl], OAMF_XFLIP
 
-    ; ------- Ground ----------------
+    ; ------- Platforms ----------------
     ld hl, SPRITE_TWO_X
-    ld  [hl], X_ORIGIN + 60 + 4
+    ld  [hl], X_ORIGIN + 30 + 4
     ld hl, SPRITE_TWO_Y
     ld  [hl], 128
     ld hl, SPRITE_TWO_TILE_NO
     ld  [hl], 1
 
     ld hl, SPRITE_THREE_X
-    ld  [hl], X_ORIGIN + 60 + 12
+    ld  [hl], X_ORIGIN + 30 + 12
     ld hl, SPRITE_THREE_Y
     ld  [hl], 128
     ld hl, SPRITE_THREE_TILE_NO
     ld  [hl], 2
     
     ld hl, SPRITE_FOUR_X
-    ld  [hl], X_ORIGIN + 60 + 20
+    ld  [hl], X_ORIGIN + 30 + 20
     ld hl, SPRITE_FOUR_Y
     ld  [hl], 128
     ld hl, SPRITE_FOUR_TILE_NO
     ld  [hl], 2
     
     ld hl, SPRITE_FIVE_X
-    ld  [hl], X_ORIGIN + 60 + 28
+    ld  [hl], X_ORIGIN + 30 + 28
     ld hl, SPRITE_FIVE_Y
     ld  [hl], 128
     ld hl, SPRITE_FIVE_TILE_NO
     ld  [hl], 1
     ld hl, SPRITE_FIVE_SETTINGS
+    ld  [hl], OAMF_XFLIP
+
+    ld hl, SPRITE_SIX_X
+    ld  [hl], X_ORIGIN + 80 + 4
+    ld hl, SPRITE_SIX_Y
+    ld  [hl], 104
+    ld hl, SPRITE_SIX_TILE_NO
+    ld  [hl], 1
+
+    ld hl, SPRITE_SEVEN_X
+    ld  [hl], X_ORIGIN + 80 + 12
+    ld hl, SPRITE_SEVEN_Y
+    ld  [hl], 104
+    ld hl, SPRITE_SEVEN_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_EIGHT_X
+    ld  [hl], X_ORIGIN + 80 + 20
+    ld hl, SPRITE_EIGHT_Y
+    ld  [hl], 104
+    ld hl, SPRITE_EIGHT_TILE_NO
+    ld  [hl], 1
+    ld hl, SPRITE_EIGHT_SETTINGS
     ld  [hl], OAMF_XFLIP
 
 .loop
@@ -170,52 +197,68 @@ Start:
     add b                   ; Increase the y location by the current y velocity
     ld [SPRITE_Y], a        ; Store back
 
-    jr .GRAV_CHECK             ; Skip resetting the jumping boolean
-
-.CAN_JUMP
-
-    ; -------- CAN_JUMP ---------------
-    ld hl, JUMPING
-    ld [hl], 0         ; Set jumping to false
-
-    ; ------- GRAVITY ------------------
-.GRAV_CHECK
-    ld a, [FALL_SPEED]  ; Load the fall speed into register a
-    ld b, a             ; Store in register b
-    ld a, [Y_VELOCITY]  ; Load register a with the current Y velocity
-    cp b                ; Compare this to the fall speed
-    jr z, .GROUND_CHECK       ; If already at max speed, continue
-
-    ; ------- INCREASE_Y_VEL -----------
-    ld a, [GRAVITY]
-    ld b, a                 ; Load gravity and store in b
-    ld a, [Y_VELOCITY]      ; Load register a with the current Y velocity
-    add b                   ; Increment Y vel
-    ld [Y_VELOCITY], a      ; Store the new Y velocity
-
     ; -------- Ground checks ---------------
-.GROUND_CHECK
+.PLATFORM_ONE_CHECK
     ld a, [SPRITE_TWO_X]
     sub 7
     ld b, a
     ld a, [SPRITE_X]
     cp b
-    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+    jr c, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_FIVE_X]
     add 8
     ld b, a
     ld a, [SPRITE_X]
     cp b
-    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+    jr nc, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_TWO_Y]
     ld b, a
     ld a, [SPRITE_Y]
     cp b
-    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+    jr nc, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_TWO_Y]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr c, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
+
+    ; -------- Reset jump ------------------
+    ld hl, JUMPING
+    ld [hl], 0
+
+    ; -------- Move up by 1 ----------------
+    ld a, [SPRITE_Y]
+    sub 1
+    ld [SPRITE_Y], a
+    jr .PLATFORM_ONE_CHECK        ; Check if the sprite is now on top of the platform
+
+    ; -------- Ground checks ---------------
+.PLATFORM_TWO_CHECK
+    ld a, [SPRITE_SIX_X]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_EIGHT_X]
+    add 8
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_SIX_Y]
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_SIX_Y]
     sub 7
     ld b, a
     ld a, [SPRITE_Y]
@@ -230,7 +273,7 @@ Start:
     ld a, [SPRITE_Y]
     sub 1
     ld [SPRITE_Y], a
-    jr .GROUND_CHECK        ; Check if the sprite is now on top of the platform
+    jr .PLATFORM_TWO_CHECK        ; Check if the sprite is now on top of the platform
 
     ; -------- Joypad Code --------
 .JOYPAD
@@ -318,8 +361,9 @@ Start:
     and 1
     jr nz, .JOY_B       ; If already jumping, ignore
 
+    ld a, [JUMP_SPEED]
     ld hl, Y_VELOCITY   
-    ld [hl], -6        ; Set the Y_VELOCITY to move up
+    ld [hl], a        ; Set the Y_VELOCITY to move up
 
     ld a, [SPRITE_Y]    ; Load the sprite y location
     sub 4               ; Add 4 to avoid platform lock
@@ -332,7 +376,7 @@ Start:
     pop af          ; Load the joypad state
     and PADF_B      ; If B then set the NZ flag
 
-    jp z, .loop
+    jp z, .JOYPAD_END
 
     ; -------- JOY_B -----------
     ; Do nothing
@@ -341,16 +385,31 @@ Start:
 
 .JOYPAD_END
 
-    jp .loop
-
     ; -------- Frame Count Limiting ----
 .FRAME_COUNT_LIMIT
 
+    ld a, [PHYSICS_FRAME_COUNT]
+    ld b, a
     ld a, [FCNT]
-    cp 30           ; check if frame count is 30
+    cp b             ; check if frame count is 30
     jp nz, .loop     ; If frame count is 30, scroll X
 
-    ; ------- Runs once every 30 frames -------
+    ; ------- Runs once every x frames -------
+
+    ; ------- GRAVITY ------------------
+.GRAV_CHECK
+    ld a, [FALL_SPEED]  ; Load the fall speed into register a
+    ld b, a             ; Store in register b
+    ld a, [Y_VELOCITY]  ; Load register a with the current Y velocity
+    cp b                ; Compare this to the fall speed
+    jr z, .RESET_FRAME_COUNT       ; If already at max speed, continue
+
+    ; ------- INCREASE_Y_VEL -----------
+    ld a, [GRAVITY]
+    ld b, a                 ; Load gravity and store in b
+    ld a, [Y_VELOCITY]      ; Load register a with the current Y velocity
+    add b                   ; Increment Y vel
+    ld [Y_VELOCITY], a      ; Store the new Y velocity
 
     ; ------- RESET_FRAME_COUNT -------------
 .RESET_FRAME_COUNT
