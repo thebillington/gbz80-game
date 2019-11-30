@@ -162,28 +162,6 @@ Start:
     inc a           ; Incriment frame count
     ld [FCNT], a    ; Load A to frame count
 
-    ; -------- Ground checks ---------------
-.GROUND_CHECK
-    ld a, [SPRITE_Y]
-    cp 123
-    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
-    cp 122
-    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
-    ld a, [SPRITE_Y]
-    cp 121
-    jr z, .INCREASE_HEIGHT      ; In the ground, increase height
-    ld a, [SPRITE_Y]
-    cp 120
-    jr z, .CAN_JUMP     ; If we hit the ground, set jump boolean to false
-
-    jr .FALLING         ; If we haven't hit the ground, don't reset jump
-
-.INCREASE_HEIGHT
-    ld a, [SPRITE_Y]
-    sub 1
-    ld [SPRITE_Y], a
-    jr .GROUND_CHECK
-
 .FALLING
     ; -------- FALLING ---------------
     ld a, [Y_VELOCITY]      ; Load the y velocity
@@ -206,7 +184,7 @@ Start:
     ld b, a             ; Store in register b
     ld a, [Y_VELOCITY]  ; Load register a with the current Y velocity
     cp b                ; Compare this to the fall speed
-    jr z, .JOYPAD       ; If already at max speed, continue
+    jr z, .GROUND_CHECK       ; If already at max speed, continue
 
     ; ------- INCREASE_Y_VEL -----------
     ld a, [GRAVITY]
@@ -214,6 +192,45 @@ Start:
     ld a, [Y_VELOCITY]      ; Load register a with the current Y velocity
     add b                   ; Increment Y vel
     ld [Y_VELOCITY], a      ; Store the new Y velocity
+
+    ; -------- Ground checks ---------------
+.GROUND_CHECK
+    ld a, [SPRITE_TWO_X]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_FIVE_X]
+    add 8
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_TWO_Y]
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_TWO_Y]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ; -------- Reset jump ------------------
+    ld hl, JUMPING
+    ld [hl], 0
+
+    ; -------- Move up by 1 ----------------
+    ld a, [SPRITE_Y]
+    sub 1
+    ld [SPRITE_Y], a
+    jr .GROUND_CHECK        ; Check if the sprite is now on top of the platform
 
     ; -------- Joypad Code --------
 .JOYPAD
@@ -305,7 +322,7 @@ Start:
     ld [hl], -6        ; Set the Y_VELOCITY to move up
 
     ld a, [SPRITE_Y]    ; Load the sprite y location
-    sub 1               ; Add 4 to avoid platform lock
+    sub 4               ; Add 4 to avoid platform lock
     ld [SPRITE_Y], a    ; Store back in the y location
 
     ld hl, JUMPING
