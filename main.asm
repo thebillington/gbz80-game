@@ -1,11 +1,48 @@
 INCLUDE "hardware.inc"
+INCLUDE "memory_map.inc"
+INCLUDE "dma.asm"
+INCLUDE "constants.asm"
+
+INCLUDE "Spritesheet.asm"
+
+; -------- INTERRUPT VECTORS --------
+; specific memory addresses are called when a hardware interrupt triggers
+
+; Vertical-blank triggers each time the screen finishes drawing. Video-RAM
+; (VRAM) is only available during VBLANK. So this is when updating OAM /
+; sprites is executed.
+SECTION "VBlank", ROM0[$0040]
+    jp _HRAM
+
+; LCDC interrupts are LCD-specific interrupts (not including vblank) such as
+; interrupting when the gameboy draws a specific horizontal line on-screen
+SECTION "LCDC", ROM0[$0048]
+    reti
+
+; Timer interrupt is triggered when the timer, rTIMA, ($FF05) overflows.
+; rDIV, rTIMA, rTMA, rTAC all control the timer.
+SECTION "Timer", ROM0[$0050]
+    reti
+
+; Serial interrupt occurs after the gameboy transfers a byte through the
+; gameboy link cable.
+SECTION "Serial", ROM0[$0058]
+    reti
+
+; Joypad interrupt occurs after a button has been pressed. Usually we don't
+; enable this, and instead poll the joypad state each vblank
+SECTION "Joypad", ROM0[$0060]
+    reti
+
+; -------- END INTERRUPT VECTORS --------
 
 Section "Header", rom0[$100]
 
 EntryPoint:
-    di
-    jp Start
+    di  ; Disable interrupts
+    jp Start    ; Jump to code start
 
+; RGBASM will fix header code later
 rept $150 - $104
     db 0
 endr
@@ -14,85 +51,417 @@ Section "GameCode", rom0
 
 Start:
 
-    call ClearRAM ; Clear all ram locations to 0x00
+    ld SP, $FFFF  ; Set stack pointer to the top of HRAM
 
-; Wait for blank screen
+    call ClearHRAM
+    call ClearRAM   ; Fills RAM with 0's
+
+    DMA_COPY    ; Move DMA routine into HRAM so it is accessible throughout DMA access
+
+    ld a, IEF_VBLANK    ; Load VBlank mask into A Register
+    ld [rIE], a ; Set VBlank interrupt flag
+    ei  ; Enable interrupts
+
+    ; -------- Wait for vBlank ------------
 .waitVBlank
     ld a, [rLY]
     cp 144
     jr c, .waitVBlank
 
-    ; Load 0 into a and copy to the LCDC register
+    ; -------- Init LCDC register ---------
     xor a ; (ld a, 0)
     ld [rLCDC], a
 
-    call ClearScreen ; Clear tile map to point at 9000
+    call ClearScreen
 
-    ; Load images into VRAM
-    ld de, LogoImageTile ; Load the location of the first tile
-    ld bc, LogoImageTileEnd - LogoImageTile ; Load the number of tiles
-    call CopyImageData ; Copy the image data
+    ; -------- Load images into VRAM ------
+    ld hl, _SPRITE_VRAM
+    ld de, SPRITES
+    ld bc, SPRITESEND - SPRITES
+    call CopyImageData
 
-    ; Load map to display tiles
-    ld de, LogoImageMap ; Load the location of the first map
-    ld bc, LogoImageMapEnd - LogoImageMap ; Load the number of maps
-    call LoadMap ; Copy the map data
-
-    ; Load colour pallet
+    ; ------- Load colour pallet ----------
     ld a, %11100100
-    ld [rBGP], a
+    ld [rBGP], a    ; BG pallet
+    ld [rOBP0], a   ; OBJ0 pallet
 
-    ; Set the scroll x and y positions
+    ; ------- Set scroll x and y ----------
     xor a ; (ld a, 0)
     ld [rSCX], a
     ld [rSCY], a
 
-    ; Turn off sound
+    ; -------- Turn off sound --------------
     ld [rNR52], a
 
-    ; Turn screen back on
-    ld a, %10000001
+    ; -------- Turn screen back on ---------
+    xor a
+    or LCDCF_ON
+    or LCDCF_BGON
+    or LCDCF_OBJ8
+    or LCDCF_OBJON
     ld [rLCDC], a
 
-; Lock thread
-.lockup
+    ; -------- Initialize physics ----------
+    ld hl, GRAVITY
+    ld [hl], 1
+    ld hl, FALL_SPEED
+    ld [hl], 3
+    ld hl, Y_VELOCITY
+    ld [hl], 1
+    ld hl, JUMP_SPEED
+    ld [hl], -5
+    ld hl, PHYSICS_FRAME_COUNT
+    ld [hl], 3
+
+    ; Initialize player state ---------------
+    ld hl, JUMPING
+    ld [hl], 1
+
+    ; ------- Initialize DMA -------
+    ld hl, SPRITE_X
+	ld	[hl], X_ORIGIN + 30 + 8
+    ld hl, SPRITE_Y
+	ld	[hl], Y_ORIGIN + (SCREEN_H / 2) - $08	; set Y to mid screen
+    ld hl, SPRITE_SETTINGS
+    ld  [hl], OAMF_XFLIP
+
+    ; ------- Platforms ----------------
+    ld hl, SPRITE_TWO_X
+    ld  [hl], X_ORIGIN + 30 + 4
+    ld hl, SPRITE_TWO_Y
+    ld  [hl], 128
+    ld hl, SPRITE_TWO_TILE_NO
+    ld  [hl], 1
+
+    ld hl, SPRITE_THREE_X
+    ld  [hl], X_ORIGIN + 30 + 12
+    ld hl, SPRITE_THREE_Y
+    ld  [hl], 128
+    ld hl, SPRITE_THREE_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_FOUR_X
+    ld  [hl], X_ORIGIN + 30 + 20
+    ld hl, SPRITE_FOUR_Y
+    ld  [hl], 128
+    ld hl, SPRITE_FOUR_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_FIVE_X
+    ld  [hl], X_ORIGIN + 30 + 28
+    ld hl, SPRITE_FIVE_Y
+    ld  [hl], 128
+    ld hl, SPRITE_FIVE_TILE_NO
+    ld  [hl], 1
+    ld hl, SPRITE_FIVE_SETTINGS
+    ld  [hl], OAMF_XFLIP
+
+    ld hl, SPRITE_SIX_X
+    ld  [hl], X_ORIGIN + 80 + 4
+    ld hl, SPRITE_SIX_Y
+    ld  [hl], 104
+    ld hl, SPRITE_SIX_TILE_NO
+    ld  [hl], 1
+
+    ld hl, SPRITE_SEVEN_X
+    ld  [hl], X_ORIGIN + 80 + 12
+    ld hl, SPRITE_SEVEN_Y
+    ld  [hl], 104
+    ld hl, SPRITE_SEVEN_TILE_NO
+    ld  [hl], 2
+    
+    ld hl, SPRITE_EIGHT_X
+    ld  [hl], X_ORIGIN + 80 + 20
+    ld hl, SPRITE_EIGHT_Y
+    ld  [hl], 104
+    ld hl, SPRITE_EIGHT_TILE_NO
+    ld  [hl], 1
+    ld hl, SPRITE_EIGHT_SETTINGS
+    ld  [hl], OAMF_XFLIP
+
+.loop
+
+    halt    ; Wait until interrupt is triggered (Only VBlank enabled)
+    nop
+
+    ; -------- Frame Rate Monitoring --------
+    ld a, [FCNT]    ; Load frame count to A
+    inc a           ; Incriment frame count
+    ld [FCNT], a    ; Load A to frame count
+
+.FALLING
+    ; -------- FALLING ---------------
+    ld a, [Y_VELOCITY]      ; Load the y velocity
+    ld b, a                 ; Store in b
+    ld a, [SPRITE_Y]        ; Load the sprites y location
+    add b                   ; Increase the y location by the current y velocity
+    ld [SPRITE_Y], a        ; Store back
+
+    ; -------- Ground checks ---------------
+.PLATFORM_ONE_CHECK
+    ld a, [SPRITE_TWO_X]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr c, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_FIVE_X]
+    add 8
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr nc, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_TWO_Y]
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr nc, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_TWO_Y]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr c, .PLATFORM_TWO_CHECK         ; Check whether we are falling or on the ground
+
+    ; -------- Reset jump ------------------
+    ld hl, JUMPING
+    ld [hl], 0
+
+    ; -------- Move up by 1 ----------------
+    ld a, [SPRITE_Y]
+    sub 1
+    ld [SPRITE_Y], a
+    jr .PLATFORM_ONE_CHECK        ; Check if the sprite is now on top of the platform
+
+    ; -------- Ground checks ---------------
+.PLATFORM_TWO_CHECK
+    ld a, [SPRITE_SIX_X]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_EIGHT_X]
+    add 8
+    ld b, a
+    ld a, [SPRITE_X]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_SIX_Y]
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ld a, [SPRITE_SIX_Y]
+    sub 7
+    ld b, a
+    ld a, [SPRITE_Y]
+    cp b
+    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+
+    ; -------- Reset jump ------------------
+    ld hl, JUMPING
+    ld [hl], 0
+
+    ; -------- Move up by 1 ----------------
+    ld a, [SPRITE_Y]
+    sub 1
+    ld [SPRITE_Y], a
+    jr .PLATFORM_TWO_CHECK        ; Check if the sprite is now on top of the platform
+
+    ; -------- Joypad Code --------
+.JOYPAD
+    ld a, READ_D_PAD       ; Mask to pull bit 4 low (read the D pad)
+    ld [_HW], a     ; Pull bit 4 low
+    ld a, [_HW]     ; Read the value of the inputs
+    ld a, [_HW]     ; Read again to avoid debounce
+
+    cpl             ; (A = ~A)
+    and $0F         ; Remove top 4 bits
+
+    swap a          ; Move the lower 4 bits to the upper 4 bits
+    ld b, a         ; Save the buttons states to b
+
+    ld a, READ_BUTTONS       ; Mask to pull bit 4 low (read the buttons pad)
+    ld [_HW], a     ; Pull bit 4 low
+    ld a, [_HW]     ; Read the value of the inputs
+    ld a, [_HW]     ; Read again to avoid debounce
+
+    cpl             ; (A = ~A)
+    and $0F         ; Remove top 4 bits
+
+    or b            ; Combine with the button states
+    cp a, $0        ; Check if value is zero
+
+    ; jr nz, .lockup  ; If input detected, halt
+
+    push af         ; Save the joypad state
+    and PADF_UP     ; If up then set NZ flag
+
+    jr z, .JOY_RIGHT     ; If z flag then skip JOY_UP
+
+    ; -------- JOY_UP --------
+    ; Do nothing
+
+.JOY_RIGHT
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_RIGHT  ; If Right then set NZ flag
+
+    jr z, .JOY_DOWN
+
+    ; -------- JOY_RIGHT --------
+    ld a, [_RAM + $1]   ; Get current X value
+    inc a               ; Move the sprite East
+    ld [_RAM + $1], a   ; write the new X value to the sprite sheet
+
+    ld a, OAMF_XFLIP    ; Load a with the sprite flipped x value
+    ld [SPRITE_SETTINGS], a
+
+.JOY_DOWN
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_DOWN   ; If Right then set NZ flag
+
+    jr z, .JOY_LEFT
+
+    ; -------- JOY_DOWN --------
+    ; Do nothing
+
+.JOY_LEFT
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_LEFT   ; If Right then set NZ flag
+
+    jr z, .JOY_A
+
+    ; -------- JOY_LEFT --------
+    ld a, [_RAM + $1]   ; Get current X value
+    dec a               ; Move the sprite West
+    ld [_RAM + $1], a   ; write the new X value to the sprite sheet
+
+    ld a, 0
+    ld [SPRITE_SETTINGS], a     ; Set the sprite to point left
+
+.JOY_A
+    pop af          ; Load the joypad state
+    push af         ; Save the joypad state
+    and PADF_A      ; If A then set the NZ flag
+
+    jr z, .JOY_B
+
+    ; -------- JOY_A -----------
+    ld a, [JUMPING]     ; Load jumping boolean into a
+    and 1
+    jr nz, .JOY_B       ; If already jumping, ignore
+
+    ld a, [JUMP_SPEED]
+    ld hl, Y_VELOCITY   
+    ld [hl], a        ; Set the Y_VELOCITY to move up
+
+    ld a, [SPRITE_Y]    ; Load the sprite y location
+    sub 4               ; Add 4 to avoid platform lock
+    ld [SPRITE_Y], a    ; Store back in the y location
+
+    ld hl, JUMPING
+    ld [hl], 1     ; Set jumping variable to true
+
+.JOY_B
+    pop af          ; Load the joypad state
+    and PADF_B      ; If B then set the NZ flag
+
+    jp z, .JOYPAD_END
+
+    ; -------- JOY_B -----------
+    ; Do nothing
+    
+    ; -------- END Joypad Code --------
+
+.JOYPAD_END
+
+    ; -------- Frame Count Limiting ----
+.FRAME_COUNT_LIMIT
+
+    ld a, [PHYSICS_FRAME_COUNT]
+    ld b, a
+    ld a, [FCNT]
+    cp b             ; check if frame count is 30
+    jp nz, .loop     ; If frame count is 30, scroll X
+
+    ; ------- Runs once every x frames -------
+
+    ; ------- GRAVITY ------------------
+.GRAV_CHECK
+    ld a, [FALL_SPEED]  ; Load the fall speed into register a
+    ld b, a             ; Store in register b
+    ld a, [Y_VELOCITY]  ; Load register a with the current Y velocity
+    cp b                ; Compare this to the fall speed
+    jr z, .RESET_FRAME_COUNT       ; If already at max speed, continue
+
+    ; ------- INCREASE_Y_VEL -----------
+    ld a, [GRAVITY]
+    ld b, a                 ; Load gravity and store in b
+    ld a, [Y_VELOCITY]      ; Load register a with the current Y velocity
+    add b                   ; Increment Y vel
+    ld [Y_VELOCITY], a      ; Store the new Y velocity
+
+    ; ------- RESET_FRAME_COUNT -------------
+.RESET_FRAME_COUNT
+    ld a, 0
+    ld [FCNT], a
+
+    jp .loop        ; Restart the game loop
+
+.lockup         ; Should never be reached
     jr .lockup
 
 ClearRAM:
-    ld hl, $C000 ; Load the top RAM location
-    ld bc, $DFFF - $C000 ; Calculate the difference between the top and bottom RAM location
-    ld a, $00 ; Load a blank value into a
+    ld hl, $C000
+    ld bc, $DFFF - $C000
 .clearLoop
-    ld [hli], a ; Put blank value into the RAM location
-    dec bc ; Decrement bc (to check whether we have cleared every ram location)
-    ld a, c ; Load b into a (if b is 0, a will hold a value of 0)
-    or b ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
-    jr nz, .clearLoop ; If the value in a is not 0 jump back to clear ram loop to clear next location
-    ret ; Return execution to call
+    ld a, $00
+    ld [hl], a
+    inc hl
+    dec bc
+    ld a, c
+    or b
+    jr nz, .clearLoop
+    ret
 
 CopyImageData:
-    ld hl, $9000 ; Load the memory mapped location of the tile map
-.copyImageLoop
-    ld a, [de] ; Load the first tile into a
-    ld [hli], a ; Put the tile into the next free memory location
-    inc de ; Increment de to point at the next tile
-    dec bc ; Decrement bc (to check whether we have more tiles to load)
-    ld a, b ; Load b into a (if b is 0, a will hold a value of 0)
-    or c ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
-    jr nz, .copyImageLoop ; If the value in a is not 0 jump back to copy image to load next tile
-    ret ; Return execution to call
+; Copy the images into memory
+.copyImage
+    ld a, [de]
+    ld [hli], a ; Load a into hl and increment hl
+    inc de
+    dec bc
+    ld a, b
+    or c
+    jr nz, .copyImage
+    ret
 
 LoadMap:
-    ld hl, $9800 ; Load the memory mapped location of map data for tiles 
+    ld hl, $9800
 .mapLoadLoop
-    ld a, [de] ; Load the first map into a
-    ld [hli], a ; Put the location of the tile needed to map to this screen location
-    inc de ; Increment de to point at the next map location
-    dec bc ; Decrement bc (to check whether we have finished loading the map)
-    ld a, b ; Load b into a (if b is 0, a will hold a value of 0)
-    or c ; Or with c (if c is 0 as well as b a will hold 0, otherwise it will hold non zero)
-    jr nz, .mapLoadLoop ; If the value in a is not 0 jump back to map load loop to load next map
-    ret ; Return execution to call
+    push hl
+    ld h, d
+    ld l, e
+    ld a, [hl]
+    inc de
+    pop hl
+    ld [hl], a
+    inc hl
+    dec bc
+    ld a, c
+    or b
+    jr nz, .mapLoadLoop
+    ret
 
 ClearScreen:
     ld hl, $9800
@@ -110,158 +479,17 @@ ClearScreen:
     jr nz, .clearLoop
     ret
 
-LogoImageMap:
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$01,$02,$03,$04,$05,$06,$07,$08,$09,$0A,$0B,$0C,$0D
-DB $0E,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$01,$0F,$10,$11,$12,$13,$14,$15,$16,$17,$18,$01,$19
-DB $1A,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$1B,$1C,$1D,$1E,$1F,$20,$21,$22,$23,$24,$25,$26,$1F
-DB $27,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$28,$29,$2A,$2B,$29,$2C,$2D,$2E,$2F,$30,$31,$28,$32,$29,$33
-DB $34,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$01,$35,$36,$37,$38,$39,$3A,$3B,$3C,$3D,$3E,$3F,$40,$41,$42
-DB $43,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$44,$45,$46,$47,$48,$49,$4A,$4B,$4C,$4D,$4E,$4F,$50,$51,$52
-DB $53,$54,$55,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-LogoImageMapEnd:
+ClearHRAM:
+    ld hl, $FF80
+    ld bc, $FF8D - $FF80
+.clearLoopHRAM
+    ld a, $00
+    ld [hl], a
+    inc hl
+    dec bc
+    ld a, c
+    or b
+    jr nz, .clearLoopHRAM
+    ret
 
-LogoImageTile:
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$80,$00,$80,$00,$80,$00
-DB $C0,$E0,$E0,$F0,$F0,$F8,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC
-DB $FF,$7F,$FF,$7F,$FF,$7F,$FF,$7F,$FD,$7E,$FC,$7C,$FC,$7C,$FF,$7C
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$FF,$00
-DB $E3,$F1,$E3,$F1,$E3,$F1,$E3,$F1,$F3,$01,$02,$01,$00,$00,$C0,$00
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$07,$FF,$03,$07,$03,$07
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$FF,$E0,$E0,$E0,$E0
-DB $8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$0F,$C7,$0F,$07,$0F,$07
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$C0,$E0,$C0,$E0,$C0
-DB $F0,$F8,$F8,$FC,$FC,$FE,$FE,$FF,$FE,$FF,$3E,$3F,$3E,$3F,$3E,$3F
-DB $03,$07,$07,$0F,$0F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$FF,$00,$00,$00,$00
-DB $C0,$E0,$E0,$F0,$F0,$F8,$F8,$FC,$F8,$FC,$F8,$FC,$78,$FC,$78,$FC
-DB $80,$00,$FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$81,$00,$80,$00
-DB $F8,$FC,$FC,$F8,$F0,$F8,$F8,$F0,$F8,$F8,$F8,$FC,$F8,$FC,$F8,$FC
-DB $FF,$7F,$FF,$7F,$FF,$7F,$FF,$7F,$FC,$7C,$FC,$7C,$FC,$7C,$FF,$7F
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$FF,$FF
-DB $E0,$C0,$E0,$C0,$E0,$C0,$E0,$C0,$00,$00,$00,$00,$00,$00,$E0,$F0
-DB $03,$07,$03,$07,$03,$07,$03,$07,$03,$07,$03,$07,$03,$07,$03,$07
-DB $E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0,$E0
-DB $0F,$07,$0F,$07,$0F,$07,$0F,$07,$0F,$07,$0F,$07,$0F,$07,$0F,$07
-DB $E0,$C0,$FF,$C0,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$C0,$E0,$C0
-DB $3E,$3F,$FF,$3E,$FC,$FE,$FE,$FC,$FE,$FE,$FE,$FF,$7E,$3F,$3E,$3F
-DB $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$80,$00,$FF,$FF,$FF,$FF
-DB $78,$FC,$78,$FC,$78,$FC,$78,$FC,$78,$FC,$78,$FC,$F8,$FC,$F8,$FC
-DB $3F,$1F,$3F,$1F,$3F,$1F,$1F,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $80,$00,$80,$00,$80,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $F8,$FC,$F8,$FC,$F8,$FC,$F8,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $FF,$7F,$FF,$7F,$FF,$7F,$7F,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $E0,$F0,$E0,$F0,$E0,$F0,$E0,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $03,$07,$03,$07,$03,$07,$07,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $E0,$E0,$E0,$E0,$E0,$E0,$E0,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $0F,$07,$0F,$07,$0F,$07,$07,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $E0,$C0,$E0,$C0,$E0,$C0,$C0,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $3E,$3F,$3E,$3F,$3E,$3F,$3E,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $1F,$1F,$0F,$0F,$07,$07,$03,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $FC,$F8,$F8,$F0,$F0,$E0,$C0,$00,$00,$00,$00,$00,$00,$00,$00,$00
-DB $00,$00,$00,$00,$00,$00,$00,$00,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F
-DB $00,$00,$00,$00,$00,$00,$00,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-DB $00,$00,$00,$00,$00,$00,$00,$00,$C0,$E0,$E0,$F0,$F0,$F8,$F8,$FC
-DB $00,$00,$00,$00,$00,$00,$00,$00,$FF,$7F,$FF,$7F,$FF,$7F,$FF,$7F
-DB $00,$00,$00,$00,$00,$00,$00,$00,$E3,$F1,$E3,$F1,$E3,$F1,$E3,$F1
-DB $00,$00,$00,$00,$00,$00,$00,$00,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0
-DB $00,$00,$00,$00,$00,$00,$00,$00,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F
-DB $00,$00,$00,$00,$00,$00,$00,$00,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7
-DB $00,$00,$00,$00,$00,$00,$00,$00,$C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3
-DB $00,$00,$00,$00,$00,$00,$00,$00,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0
-DB $00,$00,$00,$00,$00,$00,$00,$00,$01,$83,$03,$87,$07,$8F,$1F,$8F
-DB $00,$00,$00,$00,$00,$00,$00,$00,$F0,$F0,$F8,$F8,$FC,$FC,$FC,$FE
-DB $00,$00,$00,$00,$00,$00,$00,$00,$7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E
-DB $FF,$FF,$80,$00,$80,$00,$80,$00,$80,$00,$FF,$00,$FF,$FF,$FF,$FF
-DB $F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$FC,$F8,$F0,$F8,$F8,$F0
-DB $FD,$7E,$FC,$7C,$FC,$7C,$FF,$7C,$FF,$7F,$FF,$7F,$FF,$7F,$FF,$7F
-DB $FF,$00,$00,$00,$00,$00,$FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-DB $F3,$01,$03,$01,$03,$01,$C3,$01,$E3,$C1,$E3,$C1,$E3,$C1,$E3,$C1
-DB $F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F8
-DB $1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$0F,$1F
-DB $8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7,$8F,$C7
-DB $C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3,$C7,$C3
-DB $F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$F0
-DB $3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$1F,$3F
-DB $1F,$8F,$1F,$8F,$1F,$8F,$1F,$8F,$1F,$8F,$1F,$8F,$1F,$8F,$1F,$8F
-DB $FF,$FF,$80,$FF,$80,$80,$80,$80,$80,$80,$80,$80,$FF,$FF,$FF,$FF
-DB $FC,$FE,$7C,$FE,$3C,$7E,$3C,$7E,$3C,$7E,$3C,$7E,$FC,$FE,$FC,$FE
-DB $7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E,$7E,$3E
-DB $3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$3F,$1F,$1F,$00
-DB $FF,$FF,$FF,$FF,$81,$00,$80,$00,$80,$00,$80,$00,$80,$00,$00,$00
-DB $F8,$F8,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$FC,$F8,$00
-DB $FC,$7C,$FC,$7C,$FC,$7C,$FF,$7F,$FF,$7F,$FF,$7F,$FF,$7F,$7F,$00
-DB $00,$00,$00,$00,$00,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00
-DB $03,$01,$00,$01,$00,$00,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$F0,$E0,$00
-DB $FC,$FC,$FE,$FE,$7F,$FF,$3F,$7F,$1F,$3F,$0F,$1F,$07,$0F,$07,$00
-DB $1F,$3F,$3F,$7F,$7F,$FF,$FE,$FE,$FC,$FC,$F8,$F8,$F0,$F0,$E0,$00
-DB $8F,$C7,$8F,$87,$0F,$07,$0F,$07,$0F,$07,$0F,$07,$0F,$07,$07,$00
-DB $C7,$C3,$C1,$C3,$C0,$C1,$C0,$C0,$C0,$C0,$C0,$C0,$C0,$C0,$C0,$00
-DB $F8,$F8,$FC,$FC,$FE,$FF,$7F,$FF,$3F,$7F,$1F,$3F,$0F,$1F,$0F,$00
-DB $3F,$7F,$7F,$FF,$FE,$FE,$FC,$FC,$F8,$F8,$F0,$F0,$E0,$E0,$C0,$00
-DB $1F,$8F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$1F,$0F,$0F,$00
-DB $FF,$FF,$FF,$FF,$FF,$FF,$80,$FF,$80,$80,$80,$80,$80,$80,$80,$00
-DB $FC,$FE,$FC,$FE,$FC,$FE,$7C,$FE,$3C,$7E,$3C,$7E,$3C,$7E,$7C,$00
-DB $7E,$3E,$7F,$3E,$7F,$3F,$7F,$3F,$7F,$3F,$7F,$3F,$7F,$3F,$3F,$00
-DB $00,$00,$FF,$00,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00
-DB $00,$00,$F8,$00,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$F8,$F0,$00
-LogoImageTileEnd:
+; -------- End Routines --------
