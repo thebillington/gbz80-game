@@ -157,21 +157,21 @@ Start:
     ld  [hl], OAMF_XFLIP
 
     ld hl, SPRITE_SIX_X
-    ld  [hl], X_ORIGIN + 80 + 4
+    ld  [hl], X_ORIGIN + 30 + 4
     ld hl, SPRITE_SIX_Y
     ld  [hl], 104
     ld hl, SPRITE_SIX_TILE_NO
     ld  [hl], 1
 
     ld hl, SPRITE_SEVEN_X
-    ld  [hl], X_ORIGIN + 80 + 12
+    ld  [hl], X_ORIGIN + 30 + 12
     ld hl, SPRITE_SEVEN_Y
     ld  [hl], 104
     ld hl, SPRITE_SEVEN_TILE_NO
     ld  [hl], 2
     
     ld hl, SPRITE_EIGHT_X
-    ld  [hl], X_ORIGIN + 80 + 20
+    ld  [hl], X_ORIGIN + 30 + 20
     ld hl, SPRITE_EIGHT_Y
     ld  [hl], 104
     ld hl, SPRITE_EIGHT_TILE_NO
@@ -199,6 +199,12 @@ Start:
 
     ; -------- Ground checks ---------------
 .PLATFORM_ONE_CHECK
+
+    ; -------- Is player moving down --------
+    ld a, [Y_VELOCITY]
+    and $80
+    jr nz, .PLATFORM_TWO_CHECK
+
     ld a, [SPRITE_TWO_X]
     sub 7
     ld b, a
@@ -238,32 +244,38 @@ Start:
 
     ; -------- Ground checks ---------------
 .PLATFORM_TWO_CHECK
+
+    ; -------- Is player moving down --------
+    ld a, [Y_VELOCITY]
+    and $80
+    jr nz, .END_PLATFORM_CHECKS
+
     ld a, [SPRITE_SIX_X]
     sub 7
     ld b, a
     ld a, [SPRITE_X]
     cp b
-    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+    jr c, .END_PLATFORM_CHECKS         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_EIGHT_X]
     add 8
     ld b, a
     ld a, [SPRITE_X]
     cp b
-    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+    jr nc, .END_PLATFORM_CHECKS         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_SIX_Y]
     ld b, a
     ld a, [SPRITE_Y]
     cp b
-    jr nc, .JOYPAD         ; Check whether we are falling or on the ground
+    jr nc, .END_PLATFORM_CHECKS         ; Check whether we are falling or on the ground
 
     ld a, [SPRITE_SIX_Y]
     sub 7
     ld b, a
     ld a, [SPRITE_Y]
     cp b
-    jr c, .JOYPAD         ; Check whether we are falling or on the ground
+    jr c, .END_PLATFORM_CHECKS         ; Check whether we are falling or on the ground
 
     ; -------- Reset jump ------------------
     ld hl, JUMPING
@@ -274,6 +286,8 @@ Start:
     sub 1
     ld [SPRITE_Y], a
     jr .PLATFORM_TWO_CHECK        ; Check if the sprite is now on top of the platform
+
+.END_PLATFORM_CHECKS
 
     ; -------- Joypad Code --------
 .JOYPAD
@@ -354,7 +368,12 @@ Start:
     push af         ; Save the joypad state
     and PADF_A      ; If A then set the NZ flag
 
-    jr z, .JOY_B
+    jr z, .NOT_A
+
+    ; -------- CHECK IF ALREADY JUMPING -----------
+    ld a, [HAS_JUMPED]
+    and 1
+    jr nz, .JOY_B
 
     ; -------- JOY_A -----------
     ld a, [JUMPING]     ; Load jumping boolean into a
@@ -371,6 +390,15 @@ Start:
 
     ld hl, JUMPING
     ld [hl], 1     ; Set jumping variable to true
+
+    ld a, 1
+    ld [HAS_JUMPED], a
+
+    jr .JOY_B
+
+.NOT_A
+    ld a, 0
+    ld [HAS_JUMPED], a
 
 .JOY_B
     pop af          ; Load the joypad state

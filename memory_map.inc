@@ -61,5 +61,6 @@ PHYSICS_FRAME_COUNT EQU _RAM + $204
 
 ; Player state variables
 JUMPING EQU _RAM + $205
+HAS_JUMPED EQU _RAM + $206
 
 ENDC
